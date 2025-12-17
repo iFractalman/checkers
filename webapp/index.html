@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Checkers Web UI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1>Checkers</h1>
+        <div class="status">
+          <span id="turn-indicator">Red to move</span>
+          <button id="new-game-btn">New game</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <div id="board" class="board" aria-label="Checkers board"></div>
+        <aside class="side-panel">
+          <h2>How to play</h2>
+          <ul>
+            <li>Drag a piece to a highlighted square.</li>
+            <li>On touch screens: tap a piece, then tap a target square.</li>
+            <li>Red moves first, black second.</li>
+            <li>Captures and king promotion are supported.</li>
+          </ul>
+          <p class="hint">
+            This is a standalone web UI. Later we can connect it to your
+            Telegram bot as a WebApp.
+          </p>
+        </aside>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
+
+

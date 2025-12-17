@@ -1,0 +1,224 @@
+:root {
+  --bg: #0f172a;
+  --panel: #020617;
+  --accent-red: #f97373;
+  --accent-black: #38bdf8;
+  /* Board colors tuned to look closer to the Telegram chess screenshot:
+     warm beige light squares + muted brown dark squares */
+  --square-light: #f0d9b5;
+  --square-dark: #b58863;
+  --square-highlight: #22c55e;
+  --square-selection: #eab308;
+  --text-main: #e5e7eb;
+  --text-muted: #9ca3af;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    sans-serif;
+  background: radial-gradient(circle at top, #1e293b, #020617);
+  color: var(--text-main);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.app {
+  width: 100%;
+  max-width: 1100px;
+  margin: 16px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #020617, #020617f0);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.header h1 {
+  font-size: 1.4rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#turn-indicator {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+  font-size: 0.9rem;
+}
+
+#new-game-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  color: #0f172a;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease,
+    filter 0.12s ease;
+}
+
+#new-game-btn:hover {
+  filter: brightness(1.04);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.45);
+  transform: translateY(-1px);
+}
+
+.main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 1px;
+  padding: 12px;
+}
+
+.board {
+  position: relative;
+  width: min(90vw, 560px);
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  border-radius: 18px;
+  overflow: hidden;
+  background: radial-gradient(circle at top, #fefce8, #fef3c7);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.65);
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+}
+
+.square {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.square.light {
+  background: var(--square-light);
+}
+
+.square.dark {
+  background: var(--square-dark);
+}
+
+.square.highlight {
+  box-shadow: inset 0 0 0 4px var(--square-highlight);
+}
+
+.square.selected {
+  box-shadow: inset 0 0 0 4px var(--square-selection);
+}
+
+.piece {
+  width: 72%;
+  height: 72%;
+  border-radius: 999px;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.6);
+  border: 3px solid rgba(15, 23, 42, 0.7);
+  position: relative;
+  cursor: grab;
+  touch-action: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.piece.red {
+  /* Light piece similar to "white" chess pieces */
+  background: radial-gradient(circle at 30% 20%, #f9fafb, #e5e7eb);
+}
+
+.piece.black {
+  /* Dark piece similar to "black" chess pieces */
+  background: radial-gradient(circle at 30% 20%, #4b5563, #111827);
+}
+
+.piece.king::after {
+  content: '♛';
+  color: #fefce8;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.6);
+}
+
+.piece.dragging {
+  cursor: grabbing;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.7);
+  transform: scale(1.04);
+  z-index: 10;
+}
+
+.side-panel {
+  padding: 10px 16px 16px;
+  border-radius: 16px;
+  background: radial-gradient(circle at top left, #1f2937, #020617);
+  border: 1px solid rgba(75, 85, 99, 0.6);
+}
+
+.side-panel h2 {
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.side-panel ul {
+  padding-left: 18px;
+  margin-top: 8px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  border-top: 1px dashed rgba(75, 85, 99, 0.7);
+  padding-top: 8px;
+}
+
+@media (max-width: 840px) {
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .side-panel {
+    order: -1;
+  }
+
+  .board {
+    width: min(94vw, 520px);
+  }
+}
+
+
