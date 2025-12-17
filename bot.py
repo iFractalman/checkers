@@ -6,6 +6,7 @@ from typing import Dict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from checkers_game import CheckersGame, Piece
+from game_rooms import create_room, get_room
 
 # Enable logging
 logging.basicConfig(
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Set this via environment variable CHECKERS_WEBAPP_URL when you deploy the webapp.
 WEBAPP_URL = os.getenv("CHECKERS_WEBAPP_URL", "")
 
-# Store games per chat
+# Store games per chat (for text mode)
 games: Dict[int, CheckersGame] = {}
 
 
@@ -34,6 +35,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "🎮 Welcome to Checkers Bot!\n\n"
         "Commands:\n"
+        "/challenge - Challenge someone to play\n"
         "/newgame - Start a text game here\n"
         "/board - Show the text board\n"
         "/play - Open the drag-and-drop board (Web UI)\n"
@@ -188,6 +190,148 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Create a game challenge - user chooses color"""
+    if not WEBAPP_URL:
+        await update.message.reply_text(
+            "The Web UI is not configured yet. Please set CHECKERS_WEBAPP_URL."
+        )
+        return
+    
+    user = update.effective_user
+    username = user.username or user.first_name or "Player"
+    
+    # Create room
+    room = create_room(user.id, username)
+    
+    # Ask user to choose color
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔴 Red (moves first)", callback_data=f"choose_color:{room.room_id}:red"),
+            InlineKeyboardButton("⚫ Black", callback_data=f"choose_color:{room.room_id}:black"),
+        ]
+    ])
+    
+    await update.message.reply_text(
+        f"🎮 Choose your color for game #{room.room_id}",
+        reply_markup=keyboard,
+    )
+
+
+async def handle_mention(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle bot mentions in group chats"""
+    if not update.message or not update.message.text:
+        return
+    
+    # Check if bot is mentioned (check entities or text)
+    bot_username = context.bot.username
+    message_text = update.message.text.lower()
+    is_mentioned = False
+    
+    # Check if bot username is in text
+    if bot_username and f"@{bot_username.lower()}" in message_text:
+        is_mentioned = True
+    
+    # Also check message entities for mentions
+    if not is_mentioned and update.message.entities:
+        for entity in update.message.entities:
+            if entity.type == "mention":
+                mentioned_text = message_text[entity.offset:entity.offset + entity.length]
+                if bot_username and f"@{bot_username.lower()}" in mentioned_text:
+                    is_mentioned = True
+                    break
+    
+    # Only trigger challenge if bot is mentioned
+    if is_mentioned:
+        await challenge(update, context)
+
+
+async def choose_color_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle color selection"""
+    query = update.callback_query
+    await query.answer()
+    
+    _, room_id, color = query.data.split(":")
+    room = get_room(room_id)
+    
+    if not room or room.creator_id != query.from_user.id:
+        await query.edit_message_text("❌ Invalid or expired game.")
+        return
+    
+    room.set_creator_color(color)
+    color_emoji = "🔴" if color == "red" else "⚫"
+    
+    # Create invite message
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "✅ Join Game",
+                callback_data=f"join_game:{room_id}",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🎮 Open Board",
+                web_app=WebAppInfo(url=f"{WEBAPP_URL}?room={room_id}&user={query.from_user.id}"),
+            )
+        ]
+    ])
+    
+    opponent_color = "⚫ Black" if color == "red" else "🔴 Red"
+    await query.edit_message_text(
+        f"🎮 Game #{room_id} created!\n\n"
+        f"Creator: @{room.creator_username} ({color_emoji} {color.title()})\n"
+        f"Waiting for opponent ({opponent_color})...\n\n"
+        f"Tap 'Join Game' to accept the challenge!",
+        reply_markup=keyboard,
+    )
+
+
+async def join_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle joining a game"""
+    query = update.callback_query
+    await query.answer()
+    
+    _, room_id = query.data.split(":")
+    room = get_room(room_id)
+    
+    if not room:
+        await query.edit_message_text("❌ Game not found or expired.")
+        return
+    
+    if room.opponent_id is not None:
+        await query.answer("Game already has an opponent!", show_alert=True)
+        return
+    
+    if room.creator_id == query.from_user.id:
+        await query.answer("You can't join your own game!", show_alert=True)
+        return
+    
+    username = query.from_user.username or query.from_user.first_name or "Player"
+    room.join(query.from_user.id, username)
+    
+    # Update message with both players
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "🎮 Open Board",
+                web_app=WebAppInfo(url=f"{WEBAPP_URL}?room={room_id}&user={query.from_user.id}"),
+            )
+        ]
+    ])
+    
+    creator_color = "🔴 Red" if room.creator_color == "red" else "⚫ Black"
+    opponent_color = "⚫ Black" if room.creator_color == "red" else "🔴 Red"
+    
+    await query.edit_message_text(
+        f"🎮 Game #{room_id} started!\n\n"
+        f"🔴 Red: @{room.creator_username if room.creator_color == 'red' else room.opponent_username}\n"
+        f"⚫ Black: @{room.opponent_username if room.creator_color == 'red' else room.creator_username}\n\n"
+        f"Tap 'Open Board' to play!",
+        reply_markup=keyboard,
+    )
+
+
 async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a button that opens the Web UI inside Telegram."""
     if not WEBAPP_URL:
@@ -233,11 +377,17 @@ def main():
     
     # Register handlers
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("challenge", challenge))
     application.add_handler(CommandHandler("newgame", newgame))
     application.add_handler(CommandHandler("board", show_board))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("play", play))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_move))
+    application.add_handler(CallbackQueryHandler(choose_color_callback, pattern="^choose_color:"))
+    application.add_handler(CallbackQueryHandler(join_game_callback, pattern="^join_game:"))
+    # Handle mentions in groups (check before text moves)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mention), group=1)
+    # Handle text moves (for text mode) - lower priority
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_move), group=2)
     
     # Start bot
     print("🤖 Bot starting...")

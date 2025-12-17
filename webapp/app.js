@@ -1,4 +1,4 @@
-// Simple checkers implementation in JS with drag & tap support
+// Checkers with multiplayer support via backend API
 
 const BOARD_SIZE = 8;
 const Piece = {
@@ -9,17 +9,117 @@ const Piece = {
   BLACK_KING: 4,
 };
 
+// Multiplayer state
+let roomId = null;
+let userId = null;
+let playerColor = null;
+let isMultiplayer = false;
+let pollInterval = null;
+
 let board = [];
 let currentPlayer = Piece.RED;
 let gameOver = false;
 let winner = null;
 
-let selectedSquare = null; // {row, col}
-let dragState = null; // {pieceEl, fromRow, fromCol, offsetX, offsetY}
+let selectedSquare = null;
+let dragState = null;
 
 const boardEl = document.getElementById('board');
 const turnIndicatorEl = document.getElementById('turn-indicator');
 const newGameBtn = document.getElementById('new-game-btn');
+
+// Get URL params (from Telegram WebApp)
+const urlParams = new URLSearchParams(window.location.search);
+roomId = urlParams.get('room');
+userId = urlParams.get('user') ? parseInt(urlParams.get('user')) : null;
+
+if (roomId && userId) {
+  isMultiplayer = true;
+  loadGameState();
+  // Poll for updates every 2 seconds
+  pollInterval = setInterval(loadGameState, 2000);
+} else {
+  // Single player mode
+  createInitialBoard();
+  renderBoard();
+}
+
+async function loadGameState() {
+  if (!roomId || !userId) return;
+  
+  try {
+    const response = await fetch(`/api/room/${roomId}?user_id=${userId}`);
+    if (!response.ok) {
+      if (response.status === 404) {
+        turnIndicatorEl.textContent = 'Game not found';
+        if (pollInterval) clearInterval(pollInterval);
+        return;
+      }
+      throw new Error('Failed to load game');
+    }
+    
+    const data = await response.json();
+    playerColor = data.player_color;
+    
+    // Convert backend board format to local format
+    board = data.board.map(row => 
+      row.map(cell => {
+        if (!cell) return Piece.EMPTY;
+        if (cell === 'red') return Piece.RED;
+        if (cell === 'red_king') return Piece.RED_KING;
+        if (cell === 'black') return Piece.BLACK;
+        if (cell === 'black_king') return Piece.BLACK_KING;
+        return Piece.EMPTY;
+      })
+    );
+    
+    currentPlayer = data.current_player === 'red' ? Piece.RED : Piece.BLACK;
+    gameOver = data.game_over;
+    winner = data.winner === 'red' ? Piece.RED : (data.winner === 'black' ? Piece.BLACK : null);
+    
+    updateTurnIndicator();
+    renderBoard();
+    
+    if (gameOver && pollInterval) {
+      clearInterval(pollInterval);
+    }
+  } catch (error) {
+    console.error('Error loading game state:', error);
+  }
+}
+
+async function sendMove(fromRow, fromCol, toRow, toCol) {
+  if (!roomId || !userId) return false;
+  
+  try {
+    const response = await fetch(`/api/room/${roomId}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room_id: roomId,
+        user_id: userId,
+        from_row: fromRow,
+        from_col: fromCol,
+        to_row: toRow,
+        to_col: toCol,
+      }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      alert(error.detail || 'Invalid move');
+      return false;
+    }
+    
+    // Reload state after move
+    await loadGameState();
+    return true;
+  } catch (error) {
+    console.error('Error making move:', error);
+    alert('Failed to make move');
+    return false;
+  }
+}
 
 function isDarkSquare(row, col) {
   return (row + col) % 2 === 1;
@@ -113,8 +213,19 @@ function updateTurnIndicator() {
     return;
   }
 
-  turnIndicatorEl.textContent =
-    currentPlayer === Piece.RED ? 'Red to move' : 'Black to move';
+  if (isMultiplayer && playerColor) {
+    const isMyTurn = (playerColor === 'red' && currentPlayer === Piece.RED) ||
+                     (playerColor === 'black' && currentPlayer === Piece.BLACK);
+    
+    if (isMyTurn) {
+      turnIndicatorEl.textContent = 'Your turn';
+    } else {
+      turnIndicatorEl.textContent = 'Waiting for opponent...';
+    }
+  } else {
+    turnIndicatorEl.textContent =
+      currentPlayer === Piece.RED ? 'Red to move' : 'Black to move';
+  }
 }
 
 function getPiece(row, col) {
@@ -129,6 +240,15 @@ function isPlayersPiece(piece, player) {
     return piece === Piece.RED || piece === Piece.RED_KING;
   }
   return piece === Piece.BLACK || piece === Piece.BLACK_KING;
+}
+
+function isMyPiece(piece) {
+  if (!isMultiplayer || !playerColor) return false;
+  if (playerColor === 'red') {
+    return piece === Piece.RED || piece === Piece.RED_KING;
+  } else {
+    return piece === Piece.BLACK || piece === Piece.BLACK_KING;
+  }
 }
 
 function getJumpMoves(row, col, piece, isKing, isRed) {
@@ -177,8 +297,15 @@ function getJumpMoves(row, col, piece, isKing, isRed) {
 
 function getValidMoves(row, col) {
   const piece = getPiece(row, col);
-  if (piece === Piece.EMPTY || !isPlayersPiece(piece, currentPlayer)) {
-    return [];
+  
+  if (isMultiplayer) {
+    if (piece === Piece.EMPTY || !isMyPiece(piece)) {
+      return [];
+    }
+  } else {
+    if (piece === Piece.EMPTY || !isPlayersPiece(piece, currentPlayer)) {
+      return [];
+    }
   }
 
   const moves = [];
@@ -226,7 +353,7 @@ function hasAnyJumpsForPiece(row, col) {
   return getJumpMoves(row, col, piece, isKing, isRed).length > 0;
 }
 
-function makeMove(fromRow, fromCol, toRow, toCol) {
+async function makeMove(fromRow, fromCol, toRow, toCol) {
   if (gameOver) return false;
 
   const validMoves = getValidMoves(fromRow, fromCol);
@@ -234,6 +361,16 @@ function makeMove(fromRow, fromCol, toRow, toCol) {
     return false;
   }
 
+  if (isMultiplayer) {
+    // Send move to backend
+    const success = await sendMove(fromRow, fromCol, toRow, toCol);
+    if (success) {
+      selectedSquare = null;
+    }
+    return success;
+  }
+
+  // Single player mode
   let piece = getPiece(fromRow, fromCol);
   board[fromRow][fromCol] = Piece.EMPTY;
 
@@ -257,7 +394,6 @@ function makeMove(fromRow, fromCol, toRow, toCol) {
 
   if (!gameOver) {
     if (rowDiff === 2 && hasAnyJumpsForPiece(toRow, toCol)) {
-      // Multi-capture: same player moves again with same piece
       selectedSquare = { row: toRow, col: toCol };
     } else {
       selectedSquare = null;
@@ -317,7 +453,7 @@ function attachSquareListeners() {
   });
 }
 
-function onSquareClick(e) {
+async function onSquareClick(e) {
   const square = e.currentTarget;
   const row = Number(square.dataset.row);
   const col = Number(square.dataset.col);
@@ -325,15 +461,32 @@ function onSquareClick(e) {
 
   if (gameOver) return;
 
+  if (isMultiplayer) {
+    // In multiplayer, only allow selecting your own pieces
+    if (selectedSquare) {
+      if (await makeMove(selectedSquare.row, selectedSquare.col, row, col)) {
+        renderBoard();
+      }
+      return;
+    }
+    
+    if (isMyPiece(piece)) {
+      selectedSquare = { row, col };
+    } else {
+      selectedSquare = null;
+    }
+    renderBoard();
+    return;
+  }
+
+  // Single player mode
   if (selectedSquare) {
-    // Try move
-    if (makeMove(selectedSquare.row, selectedSquare.col, row, col)) {
+    if (await makeMove(selectedSquare.row, selectedSquare.col, row, col)) {
       renderBoard();
       return;
     }
   }
 
-  // Select piece if it belongs to current player
   if (isPlayersPiece(piece, currentPlayer)) {
     selectedSquare = { row, col };
   } else {
@@ -359,7 +512,13 @@ function onPiecePointerDown(e) {
   const fromCol = Number(pieceEl.dataset.col);
   const piece = getPiece(fromRow, fromCol);
 
-  if (gameOver || !isPlayersPiece(piece, currentPlayer)) return;
+  if (gameOver) return;
+  
+  if (isMultiplayer) {
+    if (!isMyPiece(piece)) return;
+  } else {
+    if (!isPlayersPiece(piece, currentPlayer)) return;
+  }
 
   e.preventDefault();
   pieceEl.setPointerCapture(e.pointerId);
@@ -403,7 +562,7 @@ function onPointerMove(e) {
   pieceEl.style.top = `${y - pieceEl.offsetHeight / 2}px`;
 }
 
-function onPointerUp(e) {
+async function onPointerUp(e) {
   if (!dragState) return;
   const { pieceEl, fromRow, fromCol } = dragState;
   dragState = null;
@@ -420,20 +579,24 @@ function onPointerUp(e) {
   }
 
   const { row: toRow, col: toCol } = square;
-  if (makeMove(fromRow, fromCol, toRow, toCol)) {
+  if (await makeMove(fromRow, fromCol, toRow, toCol)) {
     renderBoard();
   } else {
     renderBoard();
   }
 }
 
-newGameBtn.addEventListener('click', () => {
-  createInitialBoard();
-  renderBoard();
+if (!isMultiplayer) {
+  newGameBtn.addEventListener('click', () => {
+    createInitialBoard();
+    renderBoard();
+  });
+} else {
+  // Hide new game button in multiplayer
+  newGameBtn.style.display = 'none';
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  if (pollInterval) clearInterval(pollInterval);
 });
-
-// Init
-createInitialBoard();
-renderBoard();
-
-
