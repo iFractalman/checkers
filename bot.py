@@ -3,7 +3,7 @@ import logging
 import os
 from typing import Dict
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from checkers_game import CheckersGame, Piece
 
@@ -46,7 +46,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if WEBAPP_URL:
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(text="Play with board UI", url=WEBAPP_URL)]]
+            [
+                [
+                    InlineKeyboardButton(
+                        text="Play with board UI",
+                        web_app=WebAppInfo(url=WEBAPP_URL),
+                    )
+                ]
+            ]
         )
         await update.message.reply_text(text, reply_markup=keyboard)
     else:
@@ -192,7 +199,14 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(text="Play Checkers", url=WEBAPP_URL)]]
+        [
+            [
+                InlineKeyboardButton(
+                    text="Play Checkers",
+                    web_app=WebAppInfo(url=WEBAPP_URL),
+                )
+            ]
+        ]
     )
     await update.message.reply_text(
         "Tap the button below to open the drag-and-drop board.",
