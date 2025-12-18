@@ -23,6 +23,7 @@ let winner = null;
 
 let selectedSquare = null;
 let dragState = null;
+let validMoves = []; // Array of {row, col} for valid moves from selected piece
 
 const boardEl = document.getElementById('board');
 const turnIndicatorEl = document.getElementById('turn-indicator');
@@ -157,6 +158,13 @@ function createInitialBoard() {
 function renderBoard() {
   boardEl.innerHTML = '';
 
+  // Update valid moves if piece is selected
+  if (selectedSquare) {
+    validMoves = getValidMoves(selectedSquare.row, selectedSquare.col);
+  } else {
+    validMoves = [];
+  }
+
   for (let row = 0; row < BOARD_SIZE; row++) {
     for (let col = 0; col < BOARD_SIZE; col++) {
       const square = document.createElement('div');
@@ -172,6 +180,13 @@ function renderBoard() {
         selectedSquare.col === col
       ) {
         square.classList.add('selected');
+      }
+
+      // Show move indicator circle
+      if (validMoves.some(m => m[0] === row && m[1] === col)) {
+        const indicator = document.createElement('div');
+        indicator.classList.add('move-indicator');
+        square.appendChild(indicator);
       }
 
       const piece = board[row][col];
@@ -464,13 +479,46 @@ async function onSquareClick(e) {
   if (isMultiplayer) {
     // In multiplayer, only allow selecting your own pieces
     if (selectedSquare) {
+      // Check if clicking on a valid move destination
+      const isValidMove = validMoves.some(m => m[0] === row && m[1] === col);
+      if (isValidMove) {
+        if (await makeMove(selectedSquare.row, selectedSquare.col, row, col)) {
+          selectedSquare = null;
+          renderBoard();
+        }
+        return;
+      }
+      // If clicking on another of your pieces, select that instead
+      if (isMyPiece(piece)) {
+        selectedSquare = { row, col };
+      } else {
+        selectedSquare = null;
+      }
+      renderBoard();
+      return;
+    }
+    
+    // Select piece if it's yours
+    if (isMyPiece(piece)) {
+      selectedSquare = { row, col };
+      renderBoard();
+    }
+    return;
+  }
+
+  // Single player mode
+  if (selectedSquare) {
+    // Check if clicking on a valid move destination
+    const isValidMove = validMoves.some(m => m[0] === row && m[1] === col);
+    if (isValidMove) {
       if (await makeMove(selectedSquare.row, selectedSquare.col, row, col)) {
+        selectedSquare = null;
         renderBoard();
       }
       return;
     }
-    
-    if (isMyPiece(piece)) {
+    // If clicking on another piece of current player, select that instead
+    if (isPlayersPiece(piece, currentPlayer)) {
       selectedSquare = { row, col };
     } else {
       selectedSquare = null;
@@ -479,21 +527,11 @@ async function onSquareClick(e) {
     return;
   }
 
-  // Single player mode
-  if (selectedSquare) {
-    if (await makeMove(selectedSquare.row, selectedSquare.col, row, col)) {
-      renderBoard();
-      return;
-    }
-  }
-
+  // Select piece if it belongs to current player
   if (isPlayersPiece(piece, currentPlayer)) {
     selectedSquare = { row, col };
-  } else {
-    selectedSquare = null;
+    renderBoard();
   }
-
-  renderBoard();
 }
 
 function attachPieceDragListeners() {
@@ -553,13 +591,11 @@ function onPointerMove(e) {
   if (!dragState) return;
   const { pieceEl } = dragState;
 
-  const boardRect = boardEl.getBoundingClientRect();
-  const x = e.clientX - boardRect.left;
-  const y = e.clientY - boardRect.top;
-
-  pieceEl.style.position = 'absolute';
-  pieceEl.style.left = `${x - pieceEl.offsetWidth / 2}px`;
-  pieceEl.style.top = `${y - pieceEl.offsetHeight / 2}px`;
+  // Position relative to viewport, not board
+  pieceEl.style.position = 'fixed';
+  pieceEl.style.left = `${e.clientX - pieceEl.offsetWidth / 2}px`;
+  pieceEl.style.top = `${e.clientY - pieceEl.offsetHeight / 2}px`;
+  pieceEl.style.zIndex = '1000';
 }
 
 async function onPointerUp(e) {
@@ -571,6 +607,7 @@ async function onPointerUp(e) {
   pieceEl.style.position = '';
   pieceEl.style.left = '';
   pieceEl.style.top = '';
+  pieceEl.style.zIndex = '';
 
   const square = getSquareFromClientPosition(e.clientX, e.clientY);
   if (!square) {

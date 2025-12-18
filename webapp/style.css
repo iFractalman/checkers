@@ -151,6 +151,22 @@ body {
   z-index: 10;
 }
 
+.move-indicator {
+  position: absolute;
+  width: 30%;
+  height: 30%;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.4);
+  border: 2px solid rgba(16, 185, 129, 0.8);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.square.dark .move-indicator {
+  background: rgba(16, 185, 129, 0.5);
+  border-color: rgba(16, 185, 129, 0.9);
+}
+
 @media (max-width: 840px) {
   .board {
     width: min(94vw, 520px);
