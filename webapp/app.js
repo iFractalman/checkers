@@ -464,7 +464,12 @@ function checkGameOver() {
 function attachSquareListeners() {
   const squares = boardEl.querySelectorAll('.square');
   squares.forEach((sq) => {
-    sq.addEventListener('click', onSquareClick);
+    sq.addEventListener('click', (e) => {
+      // Only handle if clicking directly on square (not on piece)
+      if (e.target === sq || e.target.classList.contains('move-indicator')) {
+        onSquareClick({ currentTarget: sq });
+      }
+    });
   });
 }
 
@@ -558,6 +563,10 @@ function onPiecePointerDown(e) {
     if (!isPlayersPiece(piece, currentPlayer)) return;
   }
 
+  // Store initial position to detect tap vs drag
+  const startX = e.clientX;
+  const startY = e.clientY;
+  
   e.preventDefault();
   pieceEl.setPointerCapture(e.pointerId);
 
@@ -566,13 +575,12 @@ function onPiecePointerDown(e) {
     pieceEl,
     fromRow,
     fromCol,
-    startX: e.clientX,
-    startY: e.clientY,
+    startX: startX,
+    startY: startY,
     offsetX: e.clientX - rect.left - rect.width / 2,
     offsetY: e.clientY - rect.top - rect.height / 2,
+    isDrag: false, // Will be set to true if moved significantly
   };
-
-  pieceEl.classList.add('dragging');
 }
 
 function getSquareFromClientPosition(x, y) {
@@ -589,18 +597,44 @@ function getSquareFromClientPosition(x, y) {
 
 function onPointerMove(e) {
   if (!dragState) return;
-  const { pieceEl } = dragState;
+  const { pieceEl, startX, startY } = dragState;
 
-  // Position relative to viewport, not board
-  pieceEl.style.position = 'fixed';
-  pieceEl.style.left = `${e.clientX - pieceEl.offsetWidth / 2}px`;
-  pieceEl.style.top = `${e.clientY - pieceEl.offsetHeight / 2}px`;
-  pieceEl.style.zIndex = '1000';
+  // Check if moved significantly (more than 5px) to distinguish tap from drag
+  const moveDistance = Math.sqrt(
+    Math.pow(e.clientX - startX, 2) + Math.pow(e.clientY - startY, 2)
+  );
+  
+  if (moveDistance > 5) {
+    dragState.isDrag = true;
+    pieceEl.classList.add('dragging');
+  }
+
+  // Only update position if actually dragging
+  if (dragState.isDrag) {
+    // Position relative to viewport, not board
+    pieceEl.style.position = 'fixed';
+    pieceEl.style.left = `${e.clientX - pieceEl.offsetWidth / 2}px`;
+    pieceEl.style.top = `${e.clientY - pieceEl.offsetHeight / 2}px`;
+    pieceEl.style.zIndex = '1000';
+  }
 }
 
 async function onPointerUp(e) {
   if (!dragState) return;
-  const { pieceEl, fromRow, fromCol } = dragState;
+  const { pieceEl, fromRow, fromCol, isDrag } = dragState;
+  
+  // If it was just a tap (not a drag), select the piece to show moves
+  if (!isDrag) {
+    dragState = null;
+    pieceEl.releasePointerCapture(e.pointerId);
+    
+    // Trigger piece selection to show valid moves
+    selectedSquare = { row: fromRow, col: fromCol };
+    renderBoard();
+    return;
+  }
+
+  // It was a drag, handle move
   dragState = null;
 
   pieceEl.classList.remove('dragging');
